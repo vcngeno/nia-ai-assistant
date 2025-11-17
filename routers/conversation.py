@@ -10,7 +10,6 @@ from database import get_db
 from models import Conversation as DBConversation, Message as DBMessage, Child
 from services.conversation_service import ConversationService
 from services.rag_service import get_rag_service
-from services.visual_service import get_visual_service
 from sqlalchemy import select
 
 router = APIRouter()
@@ -44,11 +43,6 @@ class MessageResponse(BaseModel):
     related_topics: List[str]
     follow_up_prompt: Optional[FollowUpPrompt]
     model_used: str
-    visual_content: Optional[Dict] = None
-
-class FeedbackCreate(BaseModel):
-    message_id: int
-    rating: int
 
 def calculate_age(date_of_birth: datetime) -> int:
     """Calculate age from date of birth"""
@@ -63,7 +57,7 @@ async def send_message(
     message: MessageCreate,
     db: AsyncSession = Depends(get_db)
 ):
-    """Send a message and get AI response with visuals and web search"""
+    """Send a message and get AI response with web search"""
     
     try:
         # Verify child exists
@@ -108,8 +102,9 @@ async def send_message(
         )
         db.add(user_message)
         
-        # Get RAG service response
+        # Get RAG service response with Claude and web search
         rag = get_rag_service()
+        
         result = rag.query(
             question=message.text,
             grade_level=message.grade_level,
@@ -117,30 +112,15 @@ async def send_message(
             child_age=child_age
         )
         
-        # Generate emoji visual
-        visual_service = get_visual_service()
-        visual_data = visual_service.generate_visual(
-            text=result["answer"],
-            question=message.text,
-            grade_level=message.grade_level
-        )
-        
         # Format sources
         source_citations = []
         for src in result.get("sources", []):
             if src.get("type") == "web_search":
                 source_citations.append({
-                    "title": "Web Search Result",
+                    "title": "Web Search",
                     "type": "web_search",
                     "query": src.get("query", ""),
                     "verified": True
-                })
-            else:
-                source_citations.append({
-                    "title": "Educational Content",
-                    "type": "verified_source",
-                    "snippet": src.get("content", "")[:200],
-                    "verified": src.get("verified", True)
                 })
         
         # Build response
@@ -163,11 +143,10 @@ async def send_message(
         
         response["source_type"] = source_type
         response["source_label"] = source_label
-        response["visual_content"] = visual_data.get("visual_content") if visual_data else None
         
         # Extract topics
         topics = []
-        keywords = ["math", "science", "history", "geography", "reading", "writing", "weather", "travel"]
+        keywords = ["math", "science", "history", "geography", "weather", "travel"]
         for keyword in keywords:
             if keyword.lower() in message.text.lower():
                 topics.append(keyword)
@@ -180,9 +159,7 @@ async def send_message(
             model_used=result["model_used"],
             source_type=source_type,
             sources=source_citations,
-            depth_level=message.current_depth,
-            visual_content=visual_data.get("visual_content") if visual_data else None,
-            visual_description=visual_data.get("visual_description") if visual_data else None
+            depth_level=message.current_depth
         )
         db.add(ai_message)
         
@@ -201,51 +178,21 @@ async def send_message(
         response["conversation_id"] = conversation.id
         response["model_used"] = result["model_used"]
         
-        logger.info(f"✅ Message saved: Child {child_id_int}, Visual: {bool(visual_data)}")
+        logger.info(f"✅ Message saved: Child {child_id_int}, Web search: {result.get('used_web_search', False)}")
         
         return response
         
     except Exception as e:
         await db.rollback()
-        logger.error(f"Error processing message: {e}", exc_info=True)
+        logger.error(f"Error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
-
-@router.post("/feedback")
-async def submit_feedback(
-    feedback: FeedbackCreate,
-    db: AsyncSession = Depends(get_db)
-):
-    """Submit thumbs up/down feedback"""
-    
-    try:
-        result = await db.execute(
-            select(DBMessage).where(DBMessage.id == feedback.message_id)
-        )
-        message = result.scalar_one_or_none()
-        
-        if not message:
-            raise HTTPException(status_code=404, detail="Message not found")
-        
-        message.feedback_rating = feedback.rating
-        message.feedback_timestamp = datetime.now()
-        
-        await db.commit()
-        
-        logger.info(f"✅ Feedback: Message {feedback.message_id} = {'👍' if feedback.rating == 1 else '👎'}")
-        
-        return {"success": True, "rating": feedback.rating}
-        
-    except Exception as e:
-        await db.rollback()
-        logger.error(f"Error submitting feedback: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/conversation/{conversation_id}")
 async def get_conversation(
     conversation_id: int,
     db: AsyncSession = Depends(get_db)
 ):
-    """Get full conversation with all messages"""
+    """Get conversation with messages"""
     
     conv_result = await db.execute(
         select(DBConversation).where(DBConversation.id == conversation_id)
