@@ -2,6 +2,7 @@ import logging
 from typing import Dict, List, Optional
 import os
 from openai import OpenAI
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +13,15 @@ class VisualService:
         """Initialize with OpenAI client"""
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
         if self.openai_api_key:
-            self.client = OpenAI(api_key=self.openai_api_key)
+            # Create explicit httpx client without proxies
+            http_client = httpx.Client(
+                timeout=60.0,
+                limits=httpx.Limits(max_connections=100, max_keepalive_connections=20)
+            )
+            self.client = OpenAI(
+                api_key=self.openai_api_key,
+                http_client=http_client
+            )
             logger.info("✅ Visual Service initialized with DALL-E 3")
         else:
             self.client = None
@@ -28,6 +37,7 @@ class VisualService:
         "dinosaur": ["🦕", "🦖", "🦴"],
         "animal": ["🐶", "🐱", "🐘", "🦁", "🐼"],
         "ocean": ["🌊", "🐠", "🐋", "🦈"],
+        "seahorse": ["🐴", "🌊", "🐠"],
         "math": ["➕", "➖", "✖️", "➗", "🔢"],
         "science": ["🔬", "🧪", "⚗️", "🧬"],
         "travel": ["✈️", "🚗", "🗺️", "🧳"],
@@ -43,7 +53,7 @@ class VisualService:
             "what does", "show me", "how does", "what is",
             "dinosaur", "animal", "space", "ocean", "plant",
             "weather", "geography", "science experiment",
-            "solar system", "body", "anatomy"
+            "solar system", "body", "anatomy", "seahorse"
         ]
         
         question_lower = question.lower()
