@@ -169,6 +169,14 @@ class Message(Base):
     sources = Column(JSON, nullable=True)
     depth_level = Column(Integer, default=1, nullable=False)
     
+        # Feedback tracking
+    feedback_rating = Column(Integer, nullable=True)  # 1 for thumbs up, -1 for thumbs down, None for no feedback
+    feedback_timestamp = Column(DateTime(timezone=True), nullable=True)
+    
+    # Visual support
+    visual_url = Column(String, nullable=True)  # URL to generated image/diagram
+    visual_description = Column(String, nullable=True)  # Alt text for accessibility
+    
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
