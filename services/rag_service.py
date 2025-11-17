@@ -2,6 +2,7 @@ import anthropic
 import os
 import logging
 from typing import List, Dict, Optional
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -14,8 +15,16 @@ class RAGService:
         if not self.api_key:
             raise ValueError("ANTHROPIC_API_KEY not found in environment")
         
-        # Initialize Anthropic client
-        self.client = anthropic.Anthropic(api_key=self.api_key)
+        # Initialize Anthropic client with explicit http client
+        http_client = httpx.Client(
+            timeout=60.0,
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20)
+        )
+        
+        self.client = anthropic.Anthropic(
+            api_key=self.api_key,
+            http_client=http_client
+        )
         
         logger.info(f"✅ RAG Service initialized with Anthropic Claude (with web search)")
     
