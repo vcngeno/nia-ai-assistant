@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict
 import uuid
 import logging
+from datetime import datetime
 
 from database import get_db
 from models import Conversation as DBConversation, Message as DBMessage, Child
@@ -43,6 +44,14 @@ class MessageResponse(BaseModel):
     follow_up_prompt: Optional[FollowUpPrompt]
     model_used: str
 
+def calculate_age(date_of_birth: datetime) -> int:
+    """Calculate age from date of birth"""
+    today = datetime.now()
+    age = today.year - date_of_birth.year
+    if (today.month, today.day) < (date_of_birth.month, date_of_birth.day):
+        age -= 1
+    return age
+
 @router.post("/message", response_model=MessageResponse)
 async def send_message(
     message: MessageCreate,
@@ -63,6 +72,9 @@ async def send_message(
         
         if not child:
             raise HTTPException(status_code=404, detail="Child not found")
+        
+        # Calculate child's age
+        child_age = calculate_age(child.date_of_birth) if child.date_of_birth else None
         
         # Get or create conversation
         conversation = None
@@ -101,7 +113,7 @@ async def send_message(
             question=message.text,
             grade_level=message.grade_level,
             depth_level=message.current_depth,
-            child_age=child.age  # Pass child's age for better personalization
+            child_age=child_age  # Pass calculated age
         )
         
         # Format sources for web search results
@@ -178,7 +190,7 @@ async def send_message(
         response["conversation_id"] = conversation.id
         response["model_used"] = result["model_used"]
         
-        logger.info(f"✅ Message saved: Child {child_id_int}, Conversation {conversation.id}, Web search: {result.get('used_web_search', False)}")
+        logger.info(f"✅ Message saved: Child {child_id_int} (age {child_age}), Conversation {conversation.id}, Web search: {result.get('used_web_search', False)}")
         
         return response
         
