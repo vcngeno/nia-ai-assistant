@@ -49,7 +49,7 @@ async def send_message(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Send a message and get AI response
+    Send a message and get AI response with web search capability
     Saves conversation to database for parent dashboard
     """
     
@@ -94,27 +94,33 @@ async def send_message(
         )
         db.add(user_message)
         
-        # Get RAG service response
+        # Get RAG service response (now with Claude and web search)
         rag = get_rag_service()
         
         result = rag.query(
             question=message.text,
             grade_level=message.grade_level,
             depth_level=message.current_depth,
-            num_sources=3
+            child_age=child.age  # Pass child's age for better personalization
         )
         
-        # Format sources
-        source_citations = [
-            {
-                "title": "Educational Content",
-                "type": "verified_source",
-                "snippet": src["content"][:200] + "...",
-                "grade_level": src["grade_level"],
-                "verified": src.get("verified", True)
-            }
-            for src in result["sources"]
-        ]
+        # Format sources for web search results
+        source_citations = []
+        for src in result.get("sources", []):
+            if src.get("type") == "web_search":
+                source_citations.append({
+                    "title": "Web Search Result",
+                    "type": "web_search",
+                    "query": src.get("query", ""),
+                    "verified": True
+                })
+            else:
+                source_citations.append({
+                    "title": "Educational Content",
+                    "type": "verified_source",
+                    "snippet": src.get("content", "")[:200],
+                    "verified": src.get("verified", True)
+                })
         
         # Build response
         conv_service = ConversationService()
@@ -127,11 +133,19 @@ async def send_message(
         )
         
         # Determine source type
-        source_type = response.get("source_type", "general_knowledge")
+        if result.get("used_web_search"):
+            source_type = "web_search"
+            source_label = "🌐 From the web"
+        else:
+            source_type = "general_knowledge"
+            source_label = "ℹ️ From what I know"
+        
+        response["source_type"] = source_type
+        response["source_label"] = source_label
         
         # Extract topics from the question (simple keyword extraction)
         topics = []
-        keywords = ["math", "science", "history", "geography", "reading", "writing", "multiplication", "addition"]
+        keywords = ["math", "science", "history", "geography", "reading", "writing", "weather", "travel"]
         for keyword in keywords:
             if keyword.lower() in message.text.lower():
                 topics.append(keyword)
@@ -164,7 +178,7 @@ async def send_message(
         response["conversation_id"] = conversation.id
         response["model_used"] = result["model_used"]
         
-        logger.info(f"✅ Message saved: Child {child_id_int}, Conversation {conversation.id}")
+        logger.info(f"✅ Message saved: Child {child_id_int}, Conversation {conversation.id}, Web search: {result.get('used_web_search', False)}")
         
         return response
         
