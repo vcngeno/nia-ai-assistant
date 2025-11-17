@@ -38,15 +38,10 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS middleware - allows frontend to connect
+# CORS middleware - allow all origins temporarily for development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://localhost:5180",
-        os.getenv("FRONTEND_URL", "http://localhost:3000")
-    ],
+    allow_origins=["*"],  # Allow all origins for now
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -73,3 +68,8 @@ async def health_check():
         "database": "connected",
         "ai_service": "operational"
     }
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
