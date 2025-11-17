@@ -3,8 +3,8 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "python -c 'import sys; sys.path.insert(0, \"/app\"); import main' && uvicorn main:app --host 0.0.0.0 --port $PORT",
+    "startCommand": "ls -la /app && python -c 'import sys; print(sys.path); import main' && uvicorn main:app --host 0.0.0.0 --port $PORT",
     "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 10
+    "restartPolicyMaxRetries": 3
   }
 }
