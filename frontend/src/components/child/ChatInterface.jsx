@@ -103,8 +103,8 @@ export default function ChatInterface() {
             </div>
           ) : (
             <div className="space-y-4">
-              {messages.map((message) => (
-                <div key={message.id} className={`flex ${message.role === 'child' ? 'justify-end' : 'justify-start'}`}>
+              {messages.map((message, index) => (
+                <div key={message.id || index} className={`flex ${message.role === 'child' ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[75%] rounded-2xl px-4 py-3 ${
                     message.role === 'child' 
                       ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white' 
