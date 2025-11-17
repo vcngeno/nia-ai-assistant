@@ -1,44 +1,50 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { conversationAPI } from '../../services/api';
-import { Send, Sparkles, LogOut } from 'lucide-react';
+import { ThumbsUp, ThumbsDown } from 'lucide-react';
 
 export default function ChatInterface() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [child, setChild] = useState(null);
+  const [conversationId, setConversationId] = useState(null);
   const messagesEndRef = useRef(null);
-  const navigate = useNavigate();
+
+  // Mock child data - in production, this would come from kid login
+  const childId = "1"; // This should come from authentication
+  const gradeLevel = "3rd Grade";
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   useEffect(() => {
-    const storedChild = sessionStorage.getItem('current_child');
-    if (!storedChild) {
-      navigate('/kid-login');
-      return;
-    }
-    setChild(JSON.parse(storedChild));
-
-    // Welcome message
-    setMessages([{
-      role: 'assistant',
-      content: `Hi ${JSON.parse(storedChild).display_name}! 👋 I'm Nia, your learning buddy! What would you like to learn about today?`,
-      timestamp: new Date().toISOString()
-    }]);
-  }, [navigate]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    scrollToBottom();
   }, [messages]);
+
+  const handleFeedback = async (messageId, rating) => {
+    try {
+      await conversationAPI.submitFeedback(messageId, rating);
+      
+      // Update the message to show feedback was given
+      setMessages(messages.map(msg => 
+        msg.id === messageId 
+          ? { ...msg, feedbackGiven: rating }
+          : msg
+      ));
+    } catch (error) {
+      console.error('Failed to submit feedback:', error);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!input.trim() || loading) return;
 
     const userMessage = {
+      id: Date.now(),
       role: 'child',
-      content: input.trim(),
-      timestamp: new Date().toISOString()
+      content: input,
+      timestamp: new Date()
     };
 
     setMessages(prev => [...prev, userMessage]);
@@ -47,119 +53,174 @@ export default function ChatInterface() {
 
     try {
       const response = await conversationAPI.sendMessage({
-        child_id: child.id.toString(),
-        text: userMessage.content,
-        grade_level: `${child.grade_level} grade`,
+        conversation_id: conversationId,
+        child_id: childId,
+        text: input,
+        grade_level: gradeLevel,
         current_depth: 1
       });
 
+      setConversationId(response.conversation_id);
+
       const aiMessage = {
+        id: response.message_id,
         role: 'assistant',
-        content: response.data.text,
-        sources: response.data.source_citations,
-        timestamp: new Date().toISOString()
+        content: response.text,
+        sourceLabel: response.source_label,
+        visualContent: response.visual_content,
+        timestamp: new Date(),
+        feedbackGiven: null
       };
 
       setMessages(prev => [...prev, aiMessage]);
     } catch (error) {
       console.error('Failed to send message:', error);
+      
       setMessages(prev => [...prev, {
+        id: Date.now(),
         role: 'assistant',
         content: "Oops! I had trouble understanding that. Can you try asking again? 🤔",
-        timestamp: new Date().toISOString()
+        timestamp: new Date()
       }]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleLogout = () => {
-    sessionStorage.removeItem('current_child');
-    navigate('/kid-login');
-  };
-
-  if (!child) return null;
-
   return (
-    <div className="h-screen flex flex-col bg-gradient-to-br from-kid-purple via-kid-pink to-kid-yellow">
+    <div className="min-h-screen bg-gradient-to-br from-purple-100 via-pink-100 to-blue-100">
       {/* Header */}
-      <div className="bg-white shadow-md px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-kid-purple to-kid-pink rounded-full flex items-center justify-center text-white font-bold">
-            <Sparkles className="w-6 h-6" />
-          </div>
-          <div>
-            <h1 className="font-bold text-gray-900 font-kid text-lg">
-              Chat with Nia
-            </h1>
-            <p className="text-sm text-gray-600 font-kid">Learning is fun! 🌟</p>
-          </div>
+      <div className="bg-white shadow-md">
+        <div className="max-w-4xl mx-auto px-4 py-4">
+          <h1 className="text-2xl font-bold text-purple-600">✨ Chat with Nia ✨</h1>
+          <p className="text-sm text-gray-600">Your friendly learning assistant!</p>
         </div>
-        <button
-          onClick={handleLogout}
-          className="text-gray-600 hover:text-gray-900 transition-colors"
-        >
-          <LogOut className="w-5 h-5" />
-        </button>
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((message, index) => (
-          <div
-            key={index}
-            className={`flex ${message.role === 'child' ? 'justify-end' : 'justify-start'}`}
-          >
-            <div
-              className={`max-w-[80%] rounded-2xl p-4 ${
-                message.role === 'child'
-                  ? 'bg-white text-gray-900'
-                  : 'bg-gradient-to-r from-kid-blue to-kid-green text-white'
-              } shadow-lg`}
-            >
-              <p className="font-kid text-lg whitespace-pre-wrap">{message.content}</p>
-              {message.sources && message.sources.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-white/20">
-                  <p className="text-sm opacity-90 font-kid">
-                    📚 I found this in my learning materials!
-                  </p>
+      {/* Messages Container */}
+      <div className="max-w-4xl mx-auto px-4 py-6">
+        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 min-h-[500px] max-h-[600px] overflow-y-auto">
+          {messages.length === 0 ? (
+            <div className="text-center text-gray-400 py-12">
+              <p className="text-4xl mb-4">👋</p>
+              <p className="text-lg">Hi! Ask me anything you're curious about!</p>
+              <p className="text-sm mt-2">Try asking: "What is a seahorse?" or "Tell me about space!"</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {messages.map((message) => (
+                <div
+                  key={message.id}
+                  className={`flex ${message.role === 'child' ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div
+                    className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                      message.role === 'child'
+                        ? 'bg-purple-500 text-white'
+                        : 'bg-gray-100 text-gray-800'
+                    }`}
+                  >
+                    {/* Source Label for AI messages */}
+                    {message.role === 'assistant' && message.sourceLabel && (
+                      <div className="text-xs mb-2 opacity-75 font-medium">
+                        {message.sourceLabel}
+                      </div>
+                    )}
+
+                    {/* Message Content */}
+                    <p className="whitespace-pre-wrap">{message.content}</p>
+
+                    {/* DALL-E Image */}
+                    {message.visualContent?.type === 'dalle_image' && (
+                      <div className="mt-3">
+                        <img
+                          src={message.visualContent.image_url}
+                          alt={message.visualContent.prompt}
+                          className="rounded-lg max-w-full h-auto"
+                          loading="lazy"
+                        />
+                        <p className="text-xs mt-1 opacity-75">
+                          🎨 Generated image about: {message.visualContent.prompt}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Emoji Visual */}
+                    {message.visualContent?.type === 'emoji_visual' && (
+                      <div className="mt-2 text-2xl">
+                        {message.visualContent.emojis?.join(' ')}
+                      </div>
+                    )}
+
+                    {/* Feedback Buttons */}
+                    {message.role === 'assistant' && (
+                      <div className="mt-3 pt-3 border-t border-gray-200 flex gap-2">
+                        <button
+                          onClick={() => handleFeedback(message.id, 1)}
+                          className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm transition-colors ${
+                            message.feedbackGiven === 1
+                              ? 'bg-green-500 text-white'
+                              : 'bg-gray-200 hover:bg-green-100'
+                          }`}
+                          disabled={message.feedbackGiven !== null}
+                        >
+                          <ThumbsUp size={16} />
+                          {message.feedbackGiven === 1 && 'Thanks!'}
+                        </button>
+                        <button
+                          onClick={() => handleFeedback(message.id, -1)}
+                          className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm transition-colors ${
+                            message.feedbackGiven === -1
+                              ? 'bg-red-500 text-white'
+                              : 'bg-gray-200 hover:bg-red-100'
+                          }`}
+                          disabled={message.feedbackGiven !== null}
+                        >
+                          <ThumbsDown size={16} />
+                          {message.feedbackGiven === -1 && 'Got it!'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              
+              {loading && (
+                <div className="flex justify-start">
+                  <div className="bg-gray-100 rounded-2xl px-4 py-3">
+                    <div className="flex gap-2">
+                      <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce"></div>
+                      <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                      <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                    </div>
+                  </div>
                 </div>
               )}
+              
+              <div ref={messagesEndRef} />
             </div>
-          </div>
-        ))}
-        {loading && (
-          <div className="flex justify-start">
-            <div className="bg-gradient-to-r from-kid-blue to-kid-green text-white rounded-2xl p-4 shadow-lg">
-              <div className="flex gap-2">
-                <div className="w-3 h-3 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <div className="w-3 h-3 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <div className="w-3 h-3 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              </div>
-            </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
+          )}
+        </div>
 
-      {/* Input */}
-      <div className="bg-white border-t border-gray-200 p-4">
-        <form onSubmit={handleSubmit} className="flex gap-2">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask me anything! 🤔"
-            className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-full focus:ring-2 focus:ring-kid-purple focus:border-transparent outline-none font-kid text-lg"
-            disabled={loading}
-          />
-          <button
-            type="submit"
-            disabled={loading || !input.trim()}
-            className="kid-button disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Send className="w-6 h-6" />
-          </button>
+        {/* Input Form */}
+        <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-lg p-4">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Ask me anything! 🤔"
+              className="flex-1 px-4 py-3 border-2 border-purple-200 rounded-xl focus:outline-none focus:border-purple-400"
+              disabled={loading}
+            />
+            <button
+              type="submit"
+              disabled={loading || !input.trim()}
+              className="px-6 py-3 bg-purple-500 text-white rounded-xl font-semibold hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Send 🚀
+            </button>
+          </div>
         </form>
       </div>
     </div>

@@ -73,3 +73,12 @@ export const conversationAPI = {
 };
 
 export default api;
+
+// Feedback API
+export const feedbackAPI = {
+  submitFeedback: (messageId, rating) => api.post('/conversation/feedback', { message_id: messageId, rating })
+};
+
+// Add to conversationAPI
+conversationAPI.submitFeedback = (messageId, rating) => 
+  api.post('/conversation/feedback', { message_id: messageId, rating });
