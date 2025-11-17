@@ -9,8 +9,7 @@ export default function ChatInterface() {
   const [conversationId, setConversationId] = useState(null);
   const messagesEndRef = useRef(null);
 
-  // Mock child data - in production, this would come from kid login
-  const childId = "1"; // This should come from authentication
+  const childId = "1";
   const gradeLevel = "3rd Grade";
 
   const scrollToBottom = () => {
@@ -24,12 +23,8 @@ export default function ChatInterface() {
   const handleFeedback = async (messageId, rating) => {
     try {
       await conversationAPI.submitFeedback(messageId, rating);
-      
-      // Update the message to show feedback was given
       setMessages(messages.map(msg => 
-        msg.id === messageId 
-          ? { ...msg, feedbackGiven: rating }
-          : msg
+        msg.id === messageId ? { ...msg, feedbackGiven: rating } : msg
       ));
     } catch (error) {
       console.error('Failed to submit feedback:', error);
@@ -75,7 +70,6 @@ export default function ChatInterface() {
       setMessages(prev => [...prev, aiMessage]);
     } catch (error) {
       console.error('Failed to send message:', error);
-      
       setMessages(prev => [...prev, {
         id: Date.now(),
         role: 'assistant',
@@ -88,47 +82,43 @@ export default function ChatInterface() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-100 via-pink-100 to-blue-100">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-blue-50">
       {/* Header */}
-      <div className="bg-white shadow-md">
-        <div className="max-w-4xl mx-auto px-4 py-4">
-          <h1 className="text-2xl font-bold text-purple-600">✨ Chat with Nia ✨</h1>
-          <p className="text-sm text-gray-600">Your friendly learning assistant!</p>
+      <div className="bg-white shadow-sm border-b border-purple-100">
+        <div className="max-w-4xl mx-auto px-6 py-4">
+          <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
+            Chat with Nia
+          </h1>
+          <p className="text-sm text-gray-600 mt-1">Your AI Learning Assistant</p>
         </div>
       </div>
 
       {/* Messages Container */}
-      <div className="max-w-4xl mx-auto px-4 py-6">
-        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 min-h-[500px] max-h-[600px] overflow-y-auto">
+      <div className="max-w-4xl mx-auto px-6 py-6">
+        <div className="bg-white rounded-xl shadow-md p-6 mb-4 min-h-[500px] max-h-[600px] overflow-y-auto">
           {messages.length === 0 ? (
             <div className="text-center text-gray-400 py-12">
-              <p className="text-4xl mb-4">👋</p>
-              <p className="text-lg">Hi! Ask me anything you're curious about!</p>
-              <p className="text-sm mt-2">Try asking: "What is a seahorse?" or "Tell me about space!"</p>
+              <p className="text-lg mb-2">👋 Hi there!</p>
+              <p className="text-sm">Ask me anything you're curious about!</p>
             </div>
           ) : (
             <div className="space-y-4">
               {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex ${message.role === 'child' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                      message.role === 'child'
-                        ? 'bg-purple-500 text-white'
-                        : 'bg-gray-100 text-gray-800'
-                    }`}
-                  >
-                    {/* Source Label for AI messages */}
+                <div key={message.id} className={`flex ${message.role === 'child' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[75%] rounded-2xl px-4 py-3 ${
+                    message.role === 'child' 
+                      ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white' 
+                      : 'bg-gray-50 text-gray-900 border border-gray-200'
+                  }`}>
+                    {/* Source Label */}
                     {message.role === 'assistant' && message.sourceLabel && (
-                      <div className="text-xs mb-2 opacity-75 font-medium">
+                      <div className="text-xs mb-2 text-gray-500 font-medium">
                         {message.sourceLabel}
                       </div>
                     )}
-
+                    
                     {/* Message Content */}
-                    <p className="whitespace-pre-wrap">{message.content}</p>
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
 
                     {/* DALL-E Image */}
                     {message.visualContent?.type === 'dalle_image' && (
@@ -136,18 +126,17 @@ export default function ChatInterface() {
                         <img
                           src={message.visualContent.image_url}
                           alt={message.visualContent.prompt}
-                          className="rounded-lg max-w-full h-auto"
-                          loading="lazy"
+                          className="rounded-lg max-w-full border-2 border-purple-200"
                         />
-                        <p className="text-xs mt-1 opacity-75">
-                          🎨 Generated image about: {message.visualContent.prompt}
+                        <p className="text-xs mt-2 text-gray-500">
+                          🎨 Generated image
                         </p>
                       </div>
                     )}
 
                     {/* Emoji Visual */}
                     {message.visualContent?.type === 'emoji_visual' && (
-                      <div className="mt-2 text-2xl">
+                      <div className="mt-2 text-xl">
                         {message.visualContent.emojis?.join(' ')}
                       </div>
                     )}
@@ -157,27 +146,27 @@ export default function ChatInterface() {
                       <div className="mt-3 pt-3 border-t border-gray-200 flex gap-2">
                         <button
                           onClick={() => handleFeedback(message.id, 1)}
-                          className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm transition-colors ${
+                          className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                             message.feedbackGiven === 1
-                              ? 'bg-green-500 text-white'
-                              : 'bg-gray-200 hover:bg-green-100'
+                              ? 'bg-green-100 text-green-700 border-2 border-green-300'
+                              : 'bg-white border-2 border-gray-200 hover:border-green-300 hover:bg-green-50'
                           }`}
                           disabled={message.feedbackGiven !== null}
                         >
-                          <ThumbsUp size={16} />
-                          {message.feedbackGiven === 1 && 'Thanks!'}
+                          <ThumbsUp size={14} />
+                          {message.feedbackGiven === 1 ? 'Helpful!' : 'Helpful'}
                         </button>
                         <button
                           onClick={() => handleFeedback(message.id, -1)}
-                          className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm transition-colors ${
+                          className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                             message.feedbackGiven === -1
-                              ? 'bg-red-500 text-white'
-                              : 'bg-gray-200 hover:bg-red-100'
+                              ? 'bg-red-100 text-red-700 border-2 border-red-300'
+                              : 'bg-white border-2 border-gray-200 hover:border-red-300 hover:bg-red-50'
                           }`}
                           disabled={message.feedbackGiven !== null}
                         >
-                          <ThumbsDown size={16} />
-                          {message.feedbackGiven === -1 && 'Got it!'}
+                          <ThumbsDown size={14} />
+                          {message.feedbackGiven === -1 ? 'Not helpful' : 'Not helpful'}
                         </button>
                       </div>
                     )}
@@ -187,38 +176,37 @@ export default function ChatInterface() {
               
               {loading && (
                 <div className="flex justify-start">
-                  <div className="bg-gray-100 rounded-2xl px-4 py-3">
-                    <div className="flex gap-2">
+                  <div className="bg-gray-50 rounded-2xl px-4 py-3 border border-gray-200">
+                    <div className="flex gap-1">
                       <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                      <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                      <div className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                      <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
                     </div>
                   </div>
                 </div>
               )}
-              
               <div ref={messagesEndRef} />
             </div>
           )}
         </div>
 
         {/* Input Form */}
-        <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-lg p-4">
-          <div className="flex gap-2">
+        <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-md p-4">
+          <div className="flex gap-3">
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask me anything! 🤔"
-              className="flex-1 px-4 py-3 border-2 border-purple-200 rounded-xl focus:outline-none focus:border-purple-400"
+              placeholder="Ask me anything..."
+              className="flex-1 px-4 py-3 border-2 border-purple-200 rounded-lg focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
               disabled={loading}
             />
             <button
               type="submit"
               disabled={loading || !input.trim()}
-              className="px-6 py-3 bg-purple-500 text-white rounded-xl font-semibold hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-6 py-3 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-lg font-semibold hover:from-purple-600 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
             >
-              Send 🚀
+              Send
             </button>
           </div>
         </form>

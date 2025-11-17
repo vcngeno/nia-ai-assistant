@@ -7,13 +7,12 @@ import httpx
 logger = logging.getLogger(__name__)
 
 class VisualService:
-    """Generate images using DALL-E 3 and emoji fallbacks"""
+    """Generate images using DALL-E 3 only when explicitly requested"""
     
     def __init__(self):
         """Initialize with OpenAI client"""
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
         if self.openai_api_key:
-            # Create explicit httpx client without proxies
             http_client = httpx.Client(
                 timeout=60.0,
                 limits=httpx.Limits(max_connections=100, max_keepalive_connections=20)
@@ -27,105 +26,70 @@ class VisualService:
             self.client = None
             logger.warning("⚠️ OPENAI_API_KEY not found - using emoji fallback only")
     
-    # Topic-based emoji mappings for fallback
     TOPIC_EMOJIS = {
-        "weather": ["🌤️", "☀️", "🌧️", "⛈️", "🌈", "❄️"],
-        "rain": ["🌧️", "☔", "💧"],
-        "sun": ["☀️", "🌞", "🌅"],
-        "snow": ["❄️", "⛄", "🌨️"],
-        "space": ["🌍", "🌙", "⭐", "🚀", "🪐"],
-        "dinosaur": ["🦕", "🦖", "🦴"],
-        "animal": ["🐶", "🐱", "🐘", "🦁", "🐼"],
-        "ocean": ["🌊", "🐠", "🐋", "🦈"],
-        "seahorse": ["🐴", "🌊", "🐠"],
-        "math": ["➕", "➖", "✖️", "➗", "🔢"],
-        "science": ["🔬", "🧪", "⚗️", "🧬"],
-        "travel": ["✈️", "🚗", "🗺️", "🧳"],
-        "food": ["🍎", "🍕", "🍔", "🥗"],
-        "school": ["📚", "✏️", "📝", "🎒"],
+        "weather": ["🌤️", "☀️", "🌧️"],
+        "space": ["🌍", "🌙", "⭐", "🚀"],
+        "animal": ["🐶", "🐱", "🐘"],
+        "ocean": ["🌊", "🐠", "🐋"],
+        "seahorse": ["🐴", "🌊"],
+        "math": ["➕", "➖", "✖️", "➗"],
+        "science": ["🔬", "🧪", "⚗️"],
     }
     
     def should_generate_image(self, question: str, answer: str) -> bool:
-        """Decide if concept would benefit from DALL-E image"""
-        
-        # Topics that benefit from visual representation
-        visual_topics = [
-            "what does", "show me", "how does", "what is",
-            "dinosaur", "animal", "space", "ocean", "plant",
-            "weather", "geography", "science experiment",
-            "solar system", "body", "anatomy", "seahorse"
-        ]
+        """Only generate DALL-E images for EXPLICIT visual requests"""
         
         question_lower = question.lower()
-        answer_lower = answer.lower()
         
-        # Check if question asks for visual explanation
-        for topic in visual_topics:
-            if topic in question_lower or topic in answer_lower:
-                return True
+        # ONLY generate for these explicit phrases
+        explicit_visual_requests = [
+            "show me",
+            "what does",
+            "what do",
+            "how does it look",
+            "picture of",
+            "image of",
+            "draw",
+            "can you show"
+        ]
         
-        # Don't generate for simple math or text-heavy topics
-        if any(word in question_lower for word in ["calculate", "spell", "write", "read"]):
-            return False
-        
-        return False
+        return any(phrase in question_lower for phrase in explicit_visual_requests)
     
-    def generate_visual(
-        self,
-        text: str,
-        question: str,
-        grade_level: str
-    ) -> Optional[Dict]:
-        """Generate visual using DALL-E 3 or emoji fallback"""
+    def generate_visual(self, text: str, question: str, grade_level: str) -> Optional[Dict]:
+        """Generate visual - DALL-E only for explicit requests, else emoji"""
         
         try:
-            # Check if we should generate an image
             if self.client and self.should_generate_image(question, text):
+                logger.info("🎨 Visual explicitly requested - generating DALL-E image")
                 return self._generate_dalle_image(question, text, grade_level)
             else:
-                # Fallback to emoji visual
+                # Quick emoji fallback for faster responses
                 return self._generate_emoji_visual(text, question, grade_level)
                 
         except Exception as e:
             logger.error(f"Error generating visual: {e}")
-            # Always fallback to emoji on error
             return self._generate_emoji_visual(text, question, grade_level)
     
-    def _generate_dalle_image(
-        self,
-        question: str,
-        answer: str,
-        grade_level: str
-    ) -> Optional[Dict]:
+    def _generate_dalle_image(self, question: str, answer: str, grade_level: str) -> Optional[Dict]:
         """Generate image using DALL-E 3"""
         
         try:
-            # Create child-friendly, educational prompt
             prompt = f"""Create a simple, colorful, educational illustration suitable for {grade_level} children about: {question}
 
-Style: 
-- Cartoon-like and friendly
-- Bright, cheerful colors
-- Clear and easy to understand
-- Educational and accurate
-- No text in the image
-- Safe for children
+Style: Cartoon-like, bright colors, clear, educational, no text, safe for children."""
 
-The image should help explain the concept visually."""
-
-            logger.info(f"🎨 Generating DALL-E 3 image for: {question[:50]}...")
+            logger.info(f"🎨 Generating DALL-E 3 image...")
             
             response = self.client.images.generate(
                 model="dall-e-3",
                 prompt=prompt,
                 size="1024x1024",
-                quality="standard",  # Use "standard" to save costs vs "hd"
+                quality="standard",
                 n=1,
             )
             
             image_url = response.data[0].url
-            
-            logger.info(f"✅ DALL-E 3 image generated successfully")
+            logger.info(f"✅ DALL-E 3 image generated")
             
             return {
                 "visual_content": {
@@ -134,24 +98,17 @@ The image should help explain the concept visually."""
                     "prompt": question,
                     "display_type": "image"
                 },
-                "visual_description": f"Educational illustration about {question}"
+                "visual_description": f"Illustration about {question}"
             }
             
         except Exception as e:
-            logger.error(f"DALL-E generation failed: {e}, falling back to emoji")
+            logger.error(f"DALL-E failed: {e}")
             return self._generate_emoji_visual(answer, question, grade_level)
     
-    def _generate_emoji_visual(
-        self,
-        text: str,
-        question: str,
-        grade_level: str
-    ) -> Optional[Dict]:
-        """Generate emoji-based visual (fallback)"""
+    def _generate_emoji_visual(self, text: str, question: str, grade_level: str) -> Optional[Dict]:
+        """Generate emoji visual (instant, no API call)"""
         
         text_lower = (text + " " + question).lower()
-        
-        # Find matching topics
         emojis = []
         topic_found = None
         
@@ -159,27 +116,26 @@ The image should help explain the concept visually."""
             if topic in text_lower:
                 emojis.extend(emoji_list[:3])
                 topic_found = topic
+                break
         
         if not emojis:
-            emojis = ["💡", "✨", "🌟"]
+            emojis = ["💡", "✨"]
             topic_found = "learning"
         
         return {
             "visual_content": {
                 "type": "emoji_visual",
-                "emojis": emojis[:5],
+                "emojis": emojis[:4],
                 "topic": topic_found,
                 "display_type": "inline"
             },
-            "visual_description": f"Visual using emojis: {' '.join(emojis[:5])} for {topic_found}"
+            "visual_description": f"Emojis for {topic_found}"
         }
 
 
-# Global instance
 _visual_service = None
 
 def get_visual_service() -> VisualService:
-    """Get or create visual service instance"""
     global _visual_service
     if _visual_service is None:
         _visual_service = VisualService()
