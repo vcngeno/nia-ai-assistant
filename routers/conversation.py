@@ -10,6 +10,7 @@ from database import get_db
 from models import Conversation as DBConversation, Message as DBMessage, Child
 from services.conversation_service import ConversationService
 from services.rag_service import get_rag_service
+from services.visual_service import get_visual_service
 from sqlalchemy import select
 
 router = APIRouter()
@@ -102,7 +103,9 @@ async def send_message(
             conversation_id=conversation.id,
             role="child",
             content=message.text,
-            depth_level=message.current_depth
+            depth_level=message.current_depth,
+            visual_content=visual_data.get("visual_content") if visual_data else None,
+            visual_description=visual_data.get("visual_description") if visual_data else None
         )
         db.add(user_message)
         
@@ -162,15 +165,24 @@ async def send_message(
             if keyword.lower() in message.text.lower():
                 topics.append(keyword)
         
-        # Save AI response
-        ai_message = DBMessage(
+        # Generate emoji visual
+        visual_service = get_visual_service()
+        visual_data = visual_service.generate_visual(
+            text=result["answer"],
+            question=message.text,
+            grade_level=message.grade_level
+        )
+        
+        
             conversation_id=conversation.id,
             role="assistant",
             content=result["answer"],
             model_used=result["model_used"],
             source_type=source_type,
             sources=source_citations,
-            depth_level=message.current_depth
+            depth_level=message.current_depth,
+            visual_content=visual_data.get("visual_content") if visual_data else None,
+            visual_description=visual_data.get("visual_description") if visual_data else None
         )
         db.add(ai_message)
         
@@ -239,3 +251,110 @@ async def get_conversation(
         "message_count": conversation.message_count,
         "messages": messages
     }
+
+class FeedbackCreate(BaseModel):
+    message_id: int
+    rating: int  # 1 for thumbs up, -1 for thumbs down
+
+@router.post("/feedback")
+async def submit_feedback(
+    feedback: FeedbackCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Submit thumbs up/down feedback for a message"""
+    
+    try:
+        # Get the message
+        result = await db.execute(
+            select(DBMessage).where(DBMessage.id == feedback.message_id)
+        )
+        message = result.scalar_one_or_none()
+        
+        if not message:
+            raise HTTPException(status_code=404, detail="Message not found")
+        
+        # Update feedback
+        message.feedback_rating = feedback.rating
+        message.feedback_timestamp = func.now()
+        
+        await db.commit()
+        
+        logger.info(f"✅ Feedback received: Message {feedback.message_id}, Rating: {'👍' if feedback.rating == 1 else '👎'}")
+        
+        return {
+            "success": True,
+            "message": "Feedback recorded",
+            "rating": feedback.rating
+        }
+        
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error submitting feedback: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/analytics/feedback")
+async def get_feedback_analytics(
+    db: AsyncSession = Depends(get_db)
+):
+    """Get feedback analytics for improvement"""
+    
+    try:
+        # Get feedback stats
+        result = await db.execute(
+            select(
+                func.count(DBMessage.id).label('total_responses'),
+                func.sum(case((DBMessage.feedback_rating == 1, 1), else_=0)).label('thumbs_up'),
+                func.sum(case((DBMessage.feedback_rating == -1, 1), else_=0)).label('thumbs_down'),
+                func.count(DBMessage.feedback_rating).label('total_feedback')
+            )
+        )
+        
+        stats = result.first()
+        
+        return {
+            "total_responses": stats.total_responses or 0,
+            "thumbs_up": stats.thumbs_up or 0,
+            "thumbs_down": stats.thumbs_down or 0,
+            "total_feedback": stats.total_feedback or 0,
+            "feedback_rate": round((stats.total_feedback / stats.total_responses * 100), 2) if stats.total_responses > 0 else 0
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting feedback analytics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class FeedbackCreate(BaseModel):
+    message_id: int
+    rating: int  # 1 for thumbs up, -1 for thumbs down
+
+@router.post("/feedback")
+async def submit_feedback(
+    feedback: FeedbackCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Submit thumbs up/down feedback for a message"""
+    
+    try:
+        result = await db.execute(
+            select(DBMessage).where(DBMessage.id == feedback.message_id)
+        )
+        message = result.scalar_one_or_none()
+        
+        if not message:
+            raise HTTPException(status_code=404, detail="Message not found")
+        
+        from datetime import datetime
+        message.feedback_rating = feedback.rating
+        message.feedback_timestamp = datetime.now()
+        
+        await db.commit()
+        
+        logger.info(f"✅ Feedback: Message {feedback.message_id} = {'👍' if feedback.rating == 1 else '👎'}")
+        
+        return {"success": True, "rating": feedback.rating}
+        
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error submitting feedback: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
