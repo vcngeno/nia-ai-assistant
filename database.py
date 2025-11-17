@@ -6,7 +6,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 engine = create_async_engine(
-    settings.DATABASE_URL,
+    settings.async_database_url,  # Use the property instead
     echo=settings.DEBUG,
     future=True,
     pool_pre_ping=True,

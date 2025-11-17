@@ -10,13 +10,21 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://devuser:devpass@postgres:5432/nia_db"
     
+    @property
+    def async_database_url(self) -> str:
+        """Ensure DATABASE_URL uses asyncpg driver"""
+        url = self.DATABASE_URL
+        if url.startswith("postgresql://"):
+            return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return url
+    
     # Security
     SECRET_KEY: str = "your-secret-key-change-in-production"
     JWT_SECRET_KEY: str = "your-jwt-secret-change-in-production"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_MINUTES: int = 1440
     
-    # OpenAI/AI Settings (set via environment variables)
+    # OpenAI/AI Settings
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o"
     TEMPERATURE: float = 0.7
@@ -32,6 +40,6 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
-        extra = "allow"  # Allow extra fields from .env
+        extra = "allow"
 
 settings = Settings()
