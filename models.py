@@ -174,7 +174,7 @@ class Message(Base):
     feedback_timestamp = Column(DateTime(timezone=True), nullable=True)
     
     # Visual support
-    visual_url = Column(String, nullable=True)  # URL to generated image/diagram
+    visual_content = Column(JSON, nullable=True)  # Emoji/visual representation
     visual_description = Column(String, nullable=True)  # Alt text for accessibility
     
     # Timestamps
