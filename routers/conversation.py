@@ -44,6 +44,11 @@ class MessageResponse(BaseModel):
     related_topics: List[str]
     follow_up_prompt: Optional[FollowUpPrompt]
     model_used: str
+    visual_content: Optional[Dict] = None
+
+class FeedbackCreate(BaseModel):
+    message_id: int
+    rating: int
 
 def calculate_age(date_of_birth: datetime) -> int:
     """Calculate age from date of birth"""
@@ -58,10 +63,7 @@ async def send_message(
     message: MessageCreate,
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Send a message and get AI response with web search capability
-    Saves conversation to database for parent dashboard
-    """
+    """Send a message and get AI response with visuals and web search"""
     
     try:
         # Verify child exists
@@ -86,7 +88,6 @@ async def send_message(
             conversation = conv_result.scalar_one_or_none()
         
         if not conversation:
-            # Create new conversation
             conversation = DBConversation(
                 child_id=child_id_int,
                 title=message.text[:50] + "..." if len(message.text) > 50 else message.text,
@@ -96,30 +97,35 @@ async def send_message(
                 total_depth_reached=message.current_depth
             )
             db.add(conversation)
-            await db.flush()  # Get conversation ID
+            await db.flush()
         
         # Save user's question
         user_message = DBMessage(
             conversation_id=conversation.id,
             role="child",
             content=message.text,
-            depth_level=message.current_depth,
-            visual_content=visual_data.get("visual_content") if visual_data else None,
-            visual_description=visual_data.get("visual_description") if visual_data else None
+            depth_level=message.current_depth
         )
         db.add(user_message)
         
-        # Get RAG service response (now with Claude and web search)
+        # Get RAG service response
         rag = get_rag_service()
-        
         result = rag.query(
             question=message.text,
             grade_level=message.grade_level,
             depth_level=message.current_depth,
-            child_age=child_age  # Pass calculated age
+            child_age=child_age
         )
         
-        # Format sources for web search results
+        # Generate emoji visual
+        visual_service = get_visual_service()
+        visual_data = visual_service.generate_visual(
+            text=result["answer"],
+            question=message.text,
+            grade_level=message.grade_level
+        )
+        
+        # Format sources
         source_citations = []
         for src in result.get("sources", []):
             if src.get("type") == "web_search":
@@ -157,23 +163,17 @@ async def send_message(
         
         response["source_type"] = source_type
         response["source_label"] = source_label
+        response["visual_content"] = visual_data.get("visual_content") if visual_data else None
         
-        # Extract topics from the question (simple keyword extraction)
+        # Extract topics
         topics = []
         keywords = ["math", "science", "history", "geography", "reading", "writing", "weather", "travel"]
         for keyword in keywords:
             if keyword.lower() in message.text.lower():
                 topics.append(keyword)
         
-        # Generate emoji visual
-        visual_service = get_visual_service()
-        visual_data = visual_service.generate_visual(
-            text=result["answer"],
-            question=message.text,
-            grade_level=message.grade_level
-        )
-        
-        
+        # Save AI response
+        ai_message = DBMessage(
             conversation_id=conversation.id,
             role="assistant",
             content=result["answer"],
@@ -187,12 +187,11 @@ async def send_message(
         db.add(ai_message)
         
         # Update conversation
-        conversation.message_count += 2  # User message + AI response
+        conversation.message_count += 2
         conversation.total_depth_reached = max(conversation.total_depth_reached, message.current_depth)
         if topics:
             conversation.topics = list(set((conversation.topics or []) + topics))
         
-        # Update child's last active
         child.last_active = user_message.created_at
         
         await db.commit()
@@ -202,14 +201,44 @@ async def send_message(
         response["conversation_id"] = conversation.id
         response["model_used"] = result["model_used"]
         
-        logger.info(f"✅ Message saved: Child {child_id_int} (age {child_age}), Conversation {conversation.id}, Web search: {result.get('used_web_search', False)}")
+        logger.info(f"✅ Message saved: Child {child_id_int}, Visual: {bool(visual_data)}")
         
         return response
         
     except Exception as e:
         await db.rollback()
         logger.error(f"Error processing message: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error processing message: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@router.post("/feedback")
+async def submit_feedback(
+    feedback: FeedbackCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Submit thumbs up/down feedback"""
+    
+    try:
+        result = await db.execute(
+            select(DBMessage).where(DBMessage.id == feedback.message_id)
+        )
+        message = result.scalar_one_or_none()
+        
+        if not message:
+            raise HTTPException(status_code=404, detail="Message not found")
+        
+        message.feedback_rating = feedback.rating
+        message.feedback_timestamp = datetime.now()
+        
+        await db.commit()
+        
+        logger.info(f"✅ Feedback: Message {feedback.message_id} = {'👍' if feedback.rating == 1 else '👎'}")
+        
+        return {"success": True, "rating": feedback.rating}
+        
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error submitting feedback: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/conversation/{conversation_id}")
 async def get_conversation(
@@ -226,7 +255,6 @@ async def get_conversation(
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
     
-    # Get all messages
     messages_result = await db.execute(
         select(DBMessage)
         .where(DBMessage.conversation_id == conversation_id)
@@ -251,110 +279,3 @@ async def get_conversation(
         "message_count": conversation.message_count,
         "messages": messages
     }
-
-class FeedbackCreate(BaseModel):
-    message_id: int
-    rating: int  # 1 for thumbs up, -1 for thumbs down
-
-@router.post("/feedback")
-async def submit_feedback(
-    feedback: FeedbackCreate,
-    db: AsyncSession = Depends(get_db)
-):
-    """Submit thumbs up/down feedback for a message"""
-    
-    try:
-        # Get the message
-        result = await db.execute(
-            select(DBMessage).where(DBMessage.id == feedback.message_id)
-        )
-        message = result.scalar_one_or_none()
-        
-        if not message:
-            raise HTTPException(status_code=404, detail="Message not found")
-        
-        # Update feedback
-        message.feedback_rating = feedback.rating
-        message.feedback_timestamp = func.now()
-        
-        await db.commit()
-        
-        logger.info(f"✅ Feedback received: Message {feedback.message_id}, Rating: {'👍' if feedback.rating == 1 else '👎'}")
-        
-        return {
-            "success": True,
-            "message": "Feedback recorded",
-            "rating": feedback.rating
-        }
-        
-    except Exception as e:
-        await db.rollback()
-        logger.error(f"Error submitting feedback: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/analytics/feedback")
-async def get_feedback_analytics(
-    db: AsyncSession = Depends(get_db)
-):
-    """Get feedback analytics for improvement"""
-    
-    try:
-        # Get feedback stats
-        result = await db.execute(
-            select(
-                func.count(DBMessage.id).label('total_responses'),
-                func.sum(case((DBMessage.feedback_rating == 1, 1), else_=0)).label('thumbs_up'),
-                func.sum(case((DBMessage.feedback_rating == -1, 1), else_=0)).label('thumbs_down'),
-                func.count(DBMessage.feedback_rating).label('total_feedback')
-            )
-        )
-        
-        stats = result.first()
-        
-        return {
-            "total_responses": stats.total_responses or 0,
-            "thumbs_up": stats.thumbs_up or 0,
-            "thumbs_down": stats.thumbs_down or 0,
-            "total_feedback": stats.total_feedback or 0,
-            "feedback_rate": round((stats.total_feedback / stats.total_responses * 100), 2) if stats.total_responses > 0 else 0
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting feedback analytics: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-class FeedbackCreate(BaseModel):
-    message_id: int
-    rating: int  # 1 for thumbs up, -1 for thumbs down
-
-@router.post("/feedback")
-async def submit_feedback(
-    feedback: FeedbackCreate,
-    db: AsyncSession = Depends(get_db)
-):
-    """Submit thumbs up/down feedback for a message"""
-    
-    try:
-        result = await db.execute(
-            select(DBMessage).where(DBMessage.id == feedback.message_id)
-        )
-        message = result.scalar_one_or_none()
-        
-        if not message:
-            raise HTTPException(status_code=404, detail="Message not found")
-        
-        from datetime import datetime
-        message.feedback_rating = feedback.rating
-        message.feedback_timestamp = datetime.now()
-        
-        await db.commit()
-        
-        logger.info(f"✅ Feedback: Message {feedback.message_id} = {'👍' if feedback.rating == 1 else '👎'}")
-        
-        return {"success": True, "rating": feedback.rating}
-        
-    except Exception as e:
-        await db.rollback()
-        logger.error(f"Error submitting feedback: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
